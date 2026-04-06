@@ -1,4 +1,97 @@
-﻿static async Task AddCustomerInteractive()
+﻿using System;
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+
+Console.WriteLine("=== Customer Order Tracker (EF Core) ===");
+
+// Ensure DB is up-to-date with migrations
+using (var ctx = new TrackerContext())
+{
+    try
+    {
+        ctx.Database.Migrate();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("Database migration failed.");
+        Console.WriteLine(ex.Message);
+        Console.WriteLine("Make sure you ran:");
+        Console.WriteLine("  dotnet ef migrations add InitialCreate");
+        Console.WriteLine("  dotnet ef database update");
+        return;
+    }
+}
+
+//UI logic inside a while true loop, no need to modify
+while (true)
+{
+    PrintMenu();
+    Console.Write("Choose an option: ");
+    var choice = (Console.ReadLine() ?? "").Trim();
+
+    try
+    {
+        switch (choice)
+        {
+            case "1":
+                await AddCustomerInteractive();
+                break;
+            case "2":
+                await AddOrderInteractive();
+                break;
+            case "3":
+                await ViewOrdersInteractive();
+                break;
+            case "4":
+                await UpdateCustomerEmailInteractive();
+                break;
+            case "5":
+                await DeleteCustomerInteractive();
+                break;
+            case "6":
+                await DeleteOrderInteractive();
+                break;
+            case "7":
+                await ListCustomersInteractive();
+                break;
+            case "0":
+                Console.WriteLine("Goodbye!");
+                return;
+            default:
+                Console.WriteLine("Invalid option. Try again.");
+                break;
+        }
+    }
+    catch (Exception ex)
+    {
+        // Catch-all so the menu doesn't crash
+        Console.WriteLine($"Error: {ex.Message}");
+    }
+
+    Console.WriteLine();
+}
+
+// ---------------- Menu ----------------
+static void PrintMenu()
+{
+    Console.WriteLine("""
+    
+    Menu
+    1) Add Customer
+    2) Add Order (by Customer ID)
+    3) View Orders (with Customer names)
+    4) Update Customer Email
+    5) Delete Customer
+    6) Delete Order
+    7) List Customers (with order counts)
+    0) Exit
+    """);
+}
+
+// ---------------- Features ----------------
+static async Task AddCustomerInteractive()
 {
     //Code to get User Input:
     Console.Write("Customer name: ");
@@ -69,6 +162,35 @@ static async Task AddOrderInteractive()
 
     //Then write an update to the console for the end user:
     Console.WriteLine($"Order added: {order.OrderId} for Customer {customer.Name} (ID {customer.CustomerId}) Amount: {order.TotalAmount:C}");
+}
+
+static async Task ViewOrdersInteractive()
+{
+    using var ctx = new TrackerContext();
+
+    //Code to include customer information in our Orders query
+    var orders = await ctx.Orders
+        .Include(o => o.Customer)
+        .OrderBy(o => o.OrderDate)
+        .ToListAsync();
+
+    //Begins the readback and handles empty Orders table
+    Console.WriteLine("\nOrders:");
+    if (orders.Count == 0)
+    {
+        Console.WriteLine(" (none)");
+        return;
+    }
+
+    //Create a foreach for the orders we queried
+    //For each one, get the customer name or make it Unknown
+    //Print the OrderID, OrderDate, TotalAmount, CustomerName, CustomerID
+    foreach (var o in orders)
+    {
+        var customerName = o.Customer?.Name ?? "Unknown";
+        var customerId = o.Customer?.CustomerId ?? 0;
+        Console.WriteLine($"Order {o.OrderId} | {o.OrderDate} | ${o.TotalAmount:0.00} | Customer: {customerName} (ID {customerId})");
+    }
 }
 
 static async Task UpdateCustomerEmailInteractive()
@@ -161,4 +283,64 @@ static async Task DeleteOrderInteractive()
 
     ///Report the result to the end user:
     Console.WriteLine($"Order deleted: {order.OrderId} Amount: {order.TotalAmount:C}");
+}
+
+//Freebie select statement to use as an example. No modification needed:
+static async Task ListCustomersInteractive()
+{
+    using var ctx = new TrackerContext();
+
+    var customers = await ctx.Customers
+        .Select(c => new
+        {
+            c.CustomerId,
+            c.Name,
+            c.Email,
+            OrderCount = c.Orders.Count,
+            TotalSpent = c.Orders.Sum(o => (double?)o.TotalAmount) ?? 0.0
+        })
+        .OrderBy(c => c.Name)
+        .ToListAsync();
+
+    Console.WriteLine("\nCustomers:");
+    if (customers.Count == 0)
+    {
+        Console.WriteLine(" (none)");
+        return;
+    }
+
+    foreach (var c in customers)
+    {
+        Console.WriteLine($" - {c.CustomerId}: {c.Name,-20} {c.Email,-25} | Orders: {c.OrderCount,2}  Spent: ${c.TotalSpent:0.00}");
+    }
+}
+
+// ---------------- Input Helpers ----------------
+static int ReadInt(string prompt)
+{
+    while (true)
+    {
+        Console.Write(prompt);
+        var s = (Console.ReadLine() ?? "").Trim();
+
+        if (int.TryParse(s, out int value))
+            return value;
+
+        Console.WriteLine("Please enter a valid whole number.");
+    }
+}
+
+static double ReadDouble(string prompt)
+{
+    while (true)
+    {
+        Console.Write(prompt);
+        var s = (Console.ReadLine() ?? "").Trim();
+
+        if (double.TryParse(s, NumberStyles.Float, CultureInfo.CurrentCulture, out double value) ||
+            double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+            return value;
+
+        Console.WriteLine("Please enter a valid number (example: 249.99).");
+    }
 }
